@@ -36,10 +36,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Cache pip
+      - name: Cache pip + whisper model
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
+          path: ~/.cache
           key: faster-whisper-${{ runner.os }}-v1
           restore-keys: faster-whisper-
 
