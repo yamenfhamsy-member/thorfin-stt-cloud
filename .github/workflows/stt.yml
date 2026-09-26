@@ -20,6 +20,11 @@ on:
         required: false
         default: "ar"
         type: string
+      ext:
+        description: "File extension without dot (mp3/wav/m4a/ogg/flac/mp4)"
+        required: false
+        default: "mp3"
+        type: string
 
 jobs:
   transcribe:
@@ -47,10 +52,11 @@ jobs:
         run: |
           mkdir -p in out
           curl -sL --max-time 300 --max-filesize 209715200 \
-            -o "in/input.bin" "$AUDIO_URL"
+            -o "in/input.${EXT}" "$AUDIO_URL"
           ls -la in/
         env:
           AUDIO_URL: ${{ inputs.audio_url }}
+          EXT: ${{ inputs.ext }}
 
       - name: Transcribe (faster-whisper base, CPU)
         run: |
@@ -59,7 +65,7 @@ jobs:
           from faster_whisper import WhisperModel
           model = WhisperModel("base", device="cpu", compute_type="int8")
           segments, info = model.transcribe(
-              "in/input.bin",
+              os.environ["INPUT"],
               language=os.environ.get("LANG", "ar"),
               vad_filter=True,
           )
@@ -72,6 +78,7 @@ jobs:
           wc -c out/transcript.txt
         env:
           LANG: ${{ inputs.language }}
+          INPUT: in/input.${{ inputs.ext }}
 
       - name: Upload transcript artifact
         uses: actions/upload-artifact@v4
