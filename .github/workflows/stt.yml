@@ -1,0 +1,81 @@
+name: Cloud Speech to Text
+
+# Free Arabic STT for the Thorfin Audio app (public repo = unlimited minutes).
+# App flow: upload audio to catbox.moe -> dispatch with {audio_url, job_id,
+# language} -> poll run -> download transcript-<job_id> artifact -> delete it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      audio_url:
+        description: "Direct URL of the audio file (catbox.moe link from the app)"
+        required: true
+        type: string
+      job_id:
+        description: "Client-generated id, used in the artifact name"
+        required: true
+        type: string
+      language:
+        description: "Language code (ar, en, ...)"
+        required: false
+        default: "ar"
+        type: string
+
+jobs:
+  transcribe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: faster-whisper-${{ runner.os }}-v1
+          restore-keys: faster-whisper-
+
+      - name: Install faster-whisper
+        run: |
+          pip install --upgrade pip
+          pip install faster-whisper
+
+      - name: Download audio
+        run: |
+          mkdir -p in out
+          curl -sL --max-time 300 --max-filesize 209715200 \
+            -o "in/input.bin" "$AUDIO_URL"
+          ls -la in/
+        env:
+          AUDIO_URL: ${{ inputs.audio_url }}
+
+      - name: Transcribe (faster-whisper base, CPU)
+        run: |
+          python - <<'EOF'
+          import os
+          from faster_whisper import WhisperModel
+          model = WhisperModel("base", device="cpu", compute_type="int8")
+          segments, info = model.transcribe(
+              "in/input.bin",
+              language=os.environ.get("LANG", "ar"),
+              vad_filter=True,
+          )
+          texts = []
+          for s in segments:
+              print(f"[{s.start:.1f}-{s.end:.1f}] {s.text}")
+              texts.append(s.text.strip())
+          open("out/transcript.txt", "w").write(" ".join(t for t in texts if t))
+          EOF
+          wc -c out/transcript.txt
+        env:
+          LANG: ${{ inputs.language }}
+
+      - name: Upload transcript artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: transcript-${{ inputs.job_id }}
+          path: out/transcript.txt
+          retention-days: 7
