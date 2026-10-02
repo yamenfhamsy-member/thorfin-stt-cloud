@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache
-          key: faster-whisper-${{ runner.os }}-v2
+          key: faster-whisper-${{ runner.os }}-v3
           restore-keys: faster-whisper-
 
       - name: Install faster-whisper
@@ -68,15 +68,15 @@ jobs:
         env:
           EXT: ${{ inputs.ext }}
 
-      - name: Transcribe (faster-whisper medium, CPU)
+      - name: Transcribe (faster-whisper turbo, CPU)
         run: |
           python - <<'EOF'
           import os
           from faster_whisper import WhisperModel
-          # medium >> small for Arabic (esp. dialects): far fewer errors and
-          # hallucinations. ~2-4x slower on free CPU, still well in timeout.
+          # turbo ~= large-v3 quality at small-like CPU speed: the sweet spot
+          # for free runners (medium was accurate but too slow).
           model = WhisperModel(
-              os.environ.get("WHISPER_MODEL", "medium"),
+              os.environ.get("WHISPER_MODEL", "turbo"),
               device="cpu", compute_type="int8",
           )
           segments, info = model.transcribe(
