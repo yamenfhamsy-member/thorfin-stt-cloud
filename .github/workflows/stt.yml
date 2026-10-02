@@ -58,16 +58,25 @@ jobs:
           AUDIO_URL: ${{ inputs.audio_url }}
           EXT: ${{ inputs.ext }}
 
-      - name: Transcribe (faster-whisper base, CPU)
+      - name: Transcribe (faster-whisper small, CPU)
         run: |
           python - <<'EOF'
           import os
           from faster_whisper import WhisperModel
-          model = WhisperModel("base", device="cpu", compute_type="int8")
+          # small >> base for Arabic (esp. songs), still feasible on free CPU.
+          model = WhisperModel(
+              os.environ.get("WHISPER_MODEL", "small"),
+              device="cpu", compute_type="int8",
+          )
           segments, info = model.transcribe(
               os.environ["INPUT"],
               language=os.environ.get("LANG", "ar"),
+              beam_size=5,
+              best_of=5,
+              condition_on_previous_text=True,
+              initial_prompt="هذا تسجيل صوتي باللغة العربية. اكتب الكلام المسموع بدقة.",
               vad_filter=True,
+              vad_parameters={"min_silence_duration_ms": 500},
           )
           texts = []
           for s in segments:
