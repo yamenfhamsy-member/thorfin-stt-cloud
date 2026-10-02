@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache
-          key: faster-whisper-${{ runner.os }}-v1
+          key: faster-whisper-${{ runner.os }}-v2
           restore-keys: faster-whisper-
 
       - name: Install faster-whisper
@@ -58,14 +58,25 @@ jobs:
           AUDIO_URL: ${{ inputs.audio_url }}
           EXT: ${{ inputs.ext }}
 
-      - name: Transcribe (faster-whisper small, CPU)
+      - name: Normalize to 16kHz mono wav
+        run: |
+          pip install imageio-ffmpeg
+          FF=$(python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())")
+          "$FF" -y -hide_banner -loglevel error \
+            -i "in/input.${EXT}" -vn -ar 16000 -ac 1 -c:a pcm_s16le in/norm.wav
+          ls -la in/
+        env:
+          EXT: ${{ inputs.ext }}
+
+      - name: Transcribe (faster-whisper medium, CPU)
         run: |
           python - <<'EOF'
           import os
           from faster_whisper import WhisperModel
-          # small >> base for Arabic (esp. songs), still feasible on free CPU.
+          # medium >> small for Arabic (esp. dialects): far fewer errors and
+          # hallucinations. ~2-4x slower on free CPU, still well in timeout.
           model = WhisperModel(
-              os.environ.get("WHISPER_MODEL", "small"),
+              os.environ.get("WHISPER_MODEL", "medium"),
               device="cpu", compute_type="int8",
           )
           segments, info = model.transcribe(
@@ -73,8 +84,15 @@ jobs:
               language=os.environ.get("LANG", "ar"),
               beam_size=5,
               best_of=5,
-              condition_on_previous_text=True,
-              initial_prompt="هذا تسجيل صوتي باللغة العربية. اكتب الكلام المسموع بدقة.",
+              patience=1.0,
+              # fall back to sampling when greedy decoding looks bad
+              temperature=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+              compression_ratio_threshold=2.4,
+              log_prob_threshold=-1.0,
+              no_speech_threshold=0.6,
+              # False avoids repetition loops / drift on dialects and songs
+              condition_on_previous_text=False,
+              initial_prompt="هذا تسجيل صوتي باللغة العربية. اكتب الكلام المسموع بدقة كما قيل.",
               vad_filter=True,
               vad_parameters={"min_silence_duration_ms": 500},
           )
@@ -87,7 +105,7 @@ jobs:
           wc -c out/transcript.txt
         env:
           LANG: ${{ inputs.language }}
-          INPUT: in/input.${{ inputs.ext }}
+          INPUT: in/norm.wav
 
       - name: Upload transcript artifact
         uses: actions/upload-artifact@v4
